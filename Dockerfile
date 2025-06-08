@@ -1,73 +1,169 @@
-FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu20.04
 LABEL description="Full-featured FFmpeg with NVIDIA, codecs, filters, and CUDA/NVENC support"
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG FFMPEG_VERSION=6.0.1
+ARG FFMPEG_VERSION=5.1.3
 
-# Install all required packages
+# Set environment variables for CUDA
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+ENV PATH="/usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+
+# Install system dependencies first
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential pkg-config wget curl git yasm nasm cmake \
-    libtool libssl-dev zlib1g-dev libxml2-dev \
-    libfreetype6-dev libfribidi-dev libfontconfig1-dev libass-dev \
-    libaom-dev libx264-dev libx265-dev libvpx-dev \
-    libmp3lame-dev libfdk-aac-dev libopus-dev libtwolame-dev libvorbis-dev libspeex-dev \
-    libsoxr-dev librubberband-dev \
-    libwebp-dev librsvg2-dev \
-    libzmq3-dev libzvbi-dev frei0r-plugins-dev ladspa-sdk libcaca-dev \
-    libpulse-dev \
-    libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev libsdl2-dev \
-    libvdpau-dev libva-dev libxv-dev libx11-dev libxext-dev \
-    nvidia-cuda-toolkit \
-    nvidia-cuda-dev \
+    build-essential \
+    pkg-config \
+    wget \
+    curl \
+    git \
+    yasm \
+    nasm \
+    cmake \
+    libtool \
+    automake \
+    autoconf \
+    libssl-dev \
+    zlib1g-dev \
+    libxml2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ffnvcodec headers for NVENC
+# Install media libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libfreetype6-dev \
+    libfribidi-dev \
+    libfontconfig1-dev \
+    libass-dev \
+    libaom-dev \
+    libx264-dev \
+    libx265-dev \
+    libvpx-dev \
+    libmp3lame-dev \
+    libfdk-aac-dev \
+    libopus-dev \
+    libtwolame-dev \
+    libvorbis-dev \
+    libspeex-dev \
+    libsoxr-dev \
+    librubberband-dev \
+    libwebp-dev \
+    librsvg2-dev \
+    libzmq3-dev \
+    libzvbi-dev \
+    frei0r-plugins-dev \
+    ladspa-sdk \
+    libcaca-dev \
+    libpulse-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install hardware acceleration libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1-mesa-dev \
+    libegl1-mesa-dev \
+    libglu1-mesa-dev \
+    libsdl2-dev \
+    libvdpau-dev \
+    libva-dev \
+    libxv-dev \
+    libx11-dev \
+    libxext-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ffnvcodec headers (CRITICAL: This must come before FFmpeg configure)
 RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git && \
     cd nv-codec-headers && \
+    git checkout sdk/12.1 && \
     make install && \
     cd .. && \
     rm -rf nv-codec-headers
 
-# Add user
+# Ensure NVIDIA headers are in the right location and create symlinks if needed
+RUN ln -sf /usr/local/include/ffnvcodec /usr/include/ffnvcodec || true && \
+    ldconfig
+
+# Create user and setup workspace
 RUN useradd -ms /bin/bash ffmpeguser
-USER ffmpeguser
-WORKDIR /home/ffmpeguser
+WORKDIR /tmp
 
 # Download and extract FFmpeg
 RUN wget https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz && \
-    tar xzf ffmpeg-${FFMPEG_VERSION}.tar.gz
+    tar xzf ffmpeg-${FFMPEG_VERSION}.tar.gz && \
+    rm ffmpeg-${FFMPEG_VERSION}.tar.gz
 
-# Change to source directory
-WORKDIR /home/ffmpeguser/ffmpeg-${FFMPEG_VERSION}
+WORKDIR /tmp/ffmpeg-${FFMPEG_VERSION}
 
-# Configure build
-RUN ./configure \
-    --prefix=/home/ffmpeguser/ffmpeg-build \
+# Configure FFmpeg with proper CUDA paths and dependencies check
+RUN PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig" \
+    ./configure \
+    --prefix=/usr/local \
     --enable-gpl \
     --enable-nonfree \
-    --enable-libx264 --enable-libx265 --enable-libvpx --enable-libfdk-aac \
-    --enable-libmp3lame --enable-libopus --enable-libtwolame --enable-libvorbis \
-    --enable-libspeex --enable-libsoxr --enable-librubberband \
-    --enable-libfreetype --enable-libfribidi --enable-libfontconfig --enable-libass \
-    --enable-libwebp --enable-librsvg --enable-libzmq \
-    --enable-libzvbi --enable-frei0r --enable-ladspa --enable-libcaca \
+    --enable-shared \
+    --disable-static \
+    --enable-libx264 \
+    --enable-libx265 \
+    --enable-libvpx \
+    --enable-libfdk-aac \
+    --enable-libmp3lame \
+    --enable-libopus \
+    --enable-libtwolame \
+    --enable-libvorbis \
+    --enable-libspeex \
+    --enable-libsoxr \
+    --enable-librubberband \
+    --enable-libfreetype \
+    --enable-libfribidi \
+    --enable-libfontconfig \
+    --enable-libass \
+    --enable-libwebp \
+    --enable-librsvg \
+    --enable-libzmq \
+    --enable-libzvbi \
+    --enable-frei0r \
+    --enable-ladspa \
+    --enable-libcaca \
     --enable-libpulse \
-    --enable-nvenc --enable-cuda-nvcc --enable-cuvid \
+    --enable-cuda-nvcc \
+    --enable-nvenc \
+    --enable-nvdec \
+    --enable-cuvid \
     --enable-vdpau \
     --enable-vaapi \
-    --extra-cflags=-I/usr/local/cuda/include \
-    --extra-ldflags=-L/usr/local/cuda/lib64
+    --extra-cflags="-I/usr/local/cuda/include -I/usr/local/include" \
+    --extra-ldflags="-L/usr/local/cuda/lib64 -L/usr/local/lib" \
+    --extra-libs="-lpthread -lm -lz"
 
-# Compile
+# Compile FFmpeg
 RUN make -j$(nproc)
 
-# Install
-USER root
-RUN cd /home/ffmpeguser/ffmpeg-${FFMPEG_VERSION} && \
-    make install && \
-    rm -rf /home/ffmpeguser/ffmpeg-${FFMPEG_VERSION}* && \
+# Install FFmpeg
+RUN make install && \
     ldconfig
 
-# Add to PATH
-ENV PATH="/home/ffmpeguser/ffmpeg-build/bin:/usr/local/cuda/bin:$PATH" \
-    LD_LIBRARY_PATH="/home/ffmpeguser/ffmpeg-build/lib:/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+# Clean up build files
+RUN rm -rf /tmp/ffmpeg-${FFMPEG_VERSION}
+
+# Update library cache
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/ffmpeg.conf && \
+    echo "/usr/local/cuda/lib64" > /etc/ld.so.conf.d/cuda.conf && \
+    ldconfig
+
+# Set final environment variables
+ENV PATH="/usr/local/bin:/usr/local/cuda/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/lib:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+
+# Switch to non-root user for runtime
+USER ffmpeguser
+WORKDIR /home/ffmpeguser
+
+# Verify installation and show capabilities
+RUN ffmpeg -version && \
+    echo "=== Hardware Accelerators ===" && \
+    ffmpeg -hwaccels && \
+    echo "=== Available Encoders ===" && \
+    ffmpeg -encoders | grep -E "(nvenc|h264|h265)" && \
+    echo "=== Available Decoders ===" && \
+    ffmpeg -decoders | grep -E "(cuvid|h264|h265)"
+
+# Default command
+CMD ["/bin/bash"]
