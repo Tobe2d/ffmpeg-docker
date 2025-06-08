@@ -1,158 +1,100 @@
-FFMPEG NVIDIA/CUDA GPU-enabled Docker Container
------
-Provides an [NVIDIA GPU-enabled](https://hub.docker.com/r/nvidia/cuda) container with [FFmpeg](https://ffmpeg.org/) pre-installed on an [Anaconda](https://www.anaconda.com/) container ```xychelsea/ffmpeg-nvidia:latest```, and optional [Jupyter Notebooks](https://jupyter.org/) container ```xychelsea/ffmpeg:latest-jupyter```.
+# FFmpeg + NVIDIA/CUDA GPU-Enabled Docker Container
 
-FFmpeg with NVIDIA/CUDA support
------
-FFmpeg is the leading multimedia framework, able to decode, encode, transcode, mux, demux, stream, filter and play pretty much anything that humans and machines have created. It supports the most obscure ancient formats up to the cutting edge. No matter if they were designed by some standards committee, the community or a corporation. It is also highly portable: FFmpeg compiles, runs, and passes our testing infrastructure FATE across Linux, Mac OS X, Microsoft Windows, the BSDs, Solaris, etc. under a wide variety of build environments, machine architectures, and configurations.
+A powerful, GPU-accelerated Docker container for [FFmpeg](https://ffmpeg.org/) built with full codec, subtitle, and filter support using the official [NVIDIA CUDA](https://hub.docker.com/r/nvidia/cuda) runtime base image. Supports H.264/H.265 NVENC encoding, AV1, text rendering, filters, and much more.
 
-[Anaconda](https://anaconda.com/) is an open data science platform based on Python 3. This container allows you to create custom Anaconda environments through the ```conda``` command with a lightweight version of Anaconda (Miniconda) and the ```conda-forge``` [repository](https://conda-forge.org/) in the ```/usr/local/anaconda``` directory. The default user, ```anaconda``` runs a [Tini shell](https://github.com/krallin/tini/) ```/usr/bin/tini```, and comes preloaded with the ```conda``` command in the environment ```$PATH```. An additional flavor of this container provides [Jupyter Notebooks](https://jupyter.org/) tags.
+## Docker Image Overview
 
-### NVIDIA/CUDA GPU-enabled Containers
+- Based on: `nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu20.04`
+- Includes: FFmpeg 6.0.1 built from source
+- GPU Features: NVENC, CUVID, CUDA acceleration
+- Extras: Subtitle rendering, audio/video filters, effects, overlay, format conversion, AV1 support
 
-Two flavors provide an [NVIDIA GPU-enabled](https://hub.docker.com/r/nvidia/cuda) container with [TensorFlow](https://tensorflow.org) pre-installed through [Anaconda](https://anaconda.com/).
+---
 
-## Getting the containers
+## How to Get the Image
 
-The base container, based on the ```xychelsea/anaconda3:latest-gpu``` from the [Anaconda 3 container stack](https://hub.docker.com/r/xychelsea/anaconda3) (```xychelsea/anaconda3:latest```) running Tini shell. For the container with a ```/usr/bin/tini``` entry point, use:
-
-```bash
-docker pull xychelsea/ffmpeg-nvidia:latest
-```
-
-With Jupyter Notebooks server pre-installed, pull with:
+Clone the repository:
 
 ```bash
-docker pull xychelsea/ffmpeg-nvidia:latest-jupyter
+git clone https://github.com/Tobe2d/ffmpeg-docker.git
+cd ffmpeg-docker
 ```
 
-## Running the containers
-
-To run the containers with the generic Docker application or NVIDIA enabled Docker, use the ```docker run``` command with a bound volume directory ```workspace``` attached at mount point ```/home/anaconda/workspace```.
+Build the image locally:
 
 ```bash
-docker run --gpus all --rm -it
-     -v workspace:/home/anaconda/workspace \
-     xychelsea/ffmpeg-nvidia:latest /bin/bash
+docker build -t tobe2d/ffmpeg-nvidia:full .
 ```
 
-With Jupyter Notebooks server pre-installed, run with:
+---
+
+## How to Run
+
+Run the container with full GPU access:
 
 ```bash
-docker run --gpus all --rm -it -d
-     -v workspace:/home/anaconda/workspace \
-     -p 8888:8888 \
-     xychelsea/deepfacelab:latest-jupyter
+docker run --rm --gpus all -it tobe2d/ffmpeg-nvidia:full
 ```
 
-## Using FFmpeg
+You can now use `ffmpeg` with all hardware-accelerated features enabled.
 
-Once inside the container, as the default user ```anaconda```, you can use the compiler to transcode using hardware acceleration.
+---
 
-First, however, enter ```nvidia-smi``` to see whether the container can see your NVIDIA devices. Second, check to ensure that directory of ```ffmpeg``` is ```/usr/local/ffmpeg-nvidia``` by entering ```which ffmpeg``` into a shell. Lastly, ensure that the compiled version of ```ffmpeg``` has access to both the hardware encoder and decoder using ```ffmpeg -codecs | grep -e cuvid``` and ```ffmpeg -codecs | grep -e nvenc``` respectively.
+## Test NVIDIA Support
 
-In this example, we transcode an H.264/MPEG-4 AVC video file ```input.mp4``` into an H.265/MPEG-4 HEVC video file ```output.mp4``` using the ```cuvid``` decoder and ```nvenc``` encoder (see the [NVIDIA Transcoding Guide](https://developer.nvidia.com/blog/nvidia-ffmpeg-transcoding-guide/) for more details on hardware decoding and encoding)
+After entering the container, check:
+
+```bash
+nvidia-smi
+which ffmpeg
+ffmpeg -codecs | grep -E 'nvenc|cuvid'
+```
+
+You should see support for encoders like `h264_nvenc`, `hevc_nvenc`, and decoders like `h264_cuvid`.
+
+---
+
+## Example Command: Transcode with NVENC
 
 ```bash
 ffmpeg \
-    -vsync 0 \
-    -hwaccel cuvid \
-    -c:v h264_cuvid \
-    -i input.mp4 \
-    -c:v hevc_nvenc \
-    -cq:v 4 \
-    output.mp4
+  -hwaccel cuvid \
+  -c:v h264_cuvid \
+  -i input.mp4 \
+  -c:v hevc_nvenc \
+  -cq:v 19 \
+  -preset p4 \
+  output.mp4
 ```
 
-## Building the containers
+---
 
-To build either the GPU-enabled container, use the [ffmpeg-docker](https://github.com/xychelsea/ffmpeg-docker) GitHub repository.
+## Key Build Configuration
 
-```bash
-git clone git://github.com/xychelsea/ffmpeg-docker.git
-```
+FFmpeg is built with the following flags for full multimedia capability:
 
-### Compiling FFmpeg with NVIDIA/CUDA GPU support
+- `--enable-gpl`, `--enable-nonfree`
+- `--enable-nvenc`, `--enable-cuvid`, `--enable-cuda`
+- Subtitle/Text rendering: `--enable-libass`, `--enable-libfreetype`, `--enable-libfribidi`
+- Audio codecs: `libfdk-aac`, `libmp3lame`, `libopus`, `libtwolame`, `libvorbis`, `libspeex`
+- Video codecs: `libx264`, `libx265`, `libvpx`, `libaom`, `libsvtav1`
+- Filters and effects: `frei0r`, `ladspa`, `libvmaf`, `libzmq`, `libsoxr`, `libcaca`, `libsdl2`
 
-```bash
-docker build -t ffmpeg-nvidia:latest -f Dockerfile .
-```
+---
 
-With Jupyter Notebooks server pre-installed, build with:
+## Supported Use Cases
 
-```
-docker build -t ffmpeg-nvidia:latest-jupyter -f Dockerfile.jupyter .
-```
+- Convert videos between formats
+- Add subtitles and overlay text
+- Transcode with NVIDIA GPU acceleration (NVENC, CUVID)
+- Apply filters and effects (color, crop, fade, drawtext, etc.)
+- Extract or merge audio/video streams
+- Support for AV1, H.265, AAC, MP3, Opus, and more
 
-## Default Compiler Flags
-
-The default compiler configuration file uses the following flags:
-
-```
-./configure
-        --prefix=/usr/local/ffmpeg-nvidia \
-        --extra-cflags=-I/usr/local/cuda/include \
-        --extra-ldflags=-L/usr/local/cuda/lib64 \
-        --toolchain=hardened \
-        --enable-gpl \
-        --disable-stripping \
-        --enable-avresample --disable-filter=resample \
-        --enable-cuvid \
-        --enable-gnutls \
-        --enable-ladspa \
-        --enable-libaom \
-        --enable-libass \
-        --enable-libbluray \
-        --enable-libbs2b \
-        --enable-libcaca \
-        --enable-libcdio \
-        --enable-libcodec2 \
-        --enable-libfdk-aac \
-        --enable-libflite \
-        --enable-libfontconfig \
-        --enable-libfreetype \
-        --enable-libfribidi \
-        --enable-libgme \
-        --enable-libgsm \
-        --enable-libjack \
-        --enable-libmp3lame \
-        --enable-libmysofa \
-        --enable-libnpp \
-        --enable-libopenjpeg \
-        --enable-libopenmpt \
-        --enable-libopus \
-        --enable-libpulse \
-        --enable-librsvg \
-        --enable-librubberband \
-        --enable-libshine \
-        --enable-libsnappy \
-        --enable-libsoxr \
-        --enable-libspeex \
-        --enable-libssh \
-        --enable-libtheora \
-        --enable-libtwolame \
-        --enable-libvorbis \
-        --enable-libvidstab \
-        --enable-libvpx \
-        --enable-libwebp \
-        --enable-libx265 \
-        --enable-libxml2 \
-        --enable-libxvid \
-        --enable-libzmq \
-        --enable-libzvbi \
-        --enable-lv2 \
-        --enable-nvenc \
-        --enable-nonfree \
-        --enable-omx \
-        --enable-openal \
-        --enable-opencl \
-        --enable-opengl \
-        --enable-sdl2
-```
+---
 
 ## References
 
-- [FFmpeg](https://ffmpeg.org)
-- [NVIDIA CUDA container](https://hub.docker.com/r/nvidia/cuda)
-- [Anaconda 3](https://www.anaconda.com/blog/tensorflow-in-anaconda)
-- [conda-forge](https://conda-forge.org/)
+- [FFmpeg Documentation](https://ffmpeg.org/documentation.html)
+- [NVIDIA Video Codec SDK](https://developer.nvidia.com/nvidia-video-codec-sdk)
+- [NVIDIA Docker Hub](https://hub.docker.com/r/nvidia/cuda)
