@@ -1,8 +1,8 @@
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 LABEL description="Full-featured FFmpeg with NVIDIA NVENC/NVDEC support"
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG FFMPEG_VERSION=6.1
+ARG FFMPEG_VERSION=7.0
 
 # Set environment variables for CUDA
 ENV NVIDIA_VISIBLE_DEVICES=all
@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     zlib1g-dev \
     libxml2-dev \
+    libsdl2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install media libraries
@@ -68,6 +69,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxv-dev \
     libx11-dev \
     libxext-dev \
+    libdrm-dev \
+    libxcb1-dev \
+    libxcb-shm0-dev \
+    libxcb-xfixes0-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install NVIDIA codec headers - CRITICAL for NVENC support
@@ -128,12 +133,12 @@ RUN ./configure \
     --enable-cuvid \
     --enable-vdpau \
     --enable-vaapi \
-    --extra-cflags="-I/usr/local/cuda/include -I/usr/local/include/ffnvcodec -I/usr/include/ffnvcodec" \
+    --extra-cflags="-I/usr/local/cuda/include -I/usr/local/include/ffnvcodec -I/usr/include/ffnvcodec -Wno-format-truncation" \
     --extra-ldflags="-L/usr/local/cuda/lib64 -L/usr/local/lib" \
     --extra-libs="-lpthread -lm -lz"
 
-# Compile FFmpeg
-RUN make -j$(nproc)
+# Compile FFmpeg with warnings suppressed
+RUN make -j$(nproc) CFLAGS="-Wno-format-truncation -Wno-format-overflow"
 
 # Install FFmpeg
 RUN make install && \
