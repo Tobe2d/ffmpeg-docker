@@ -1,16 +1,17 @@
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu20.04
-LABEL description="Full-featured FFmpeg with NVIDIA, codecs, filters, and CUDA/NVENC support"
+LABEL description="Full-featured FFmpeg with NVIDIA NVENC/NVDEC support"
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG FFMPEG_VERSION=5.1.3
+ARG FFMPEG_VERSION=6.1
 
 # Set environment variables for CUDA
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
 ENV PATH="/usr/local/cuda/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+ENV PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig"
 
-# Install system dependencies first
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
@@ -69,32 +70,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ffnvcodec headers (CRITICAL: This must come before FFmpeg configure)
+# Install NVIDIA codec headers - CRITICAL for NVENC support
 RUN git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git && \
     cd nv-codec-headers && \
     git checkout sdk/12.1 && \
-    make install && \
+    make install PREFIX=/usr/local && \
     cd .. && \
-    rm -rf nv-codec-headers
-
-# Ensure NVIDIA headers are in the right location and create symlinks if needed
-RUN ln -sf /usr/local/include/ffnvcodec /usr/include/ffnvcodec || true && \
+    rm -rf nv-codec-headers && \
+    # Create additional symlinks for better detection
+    ln -sf /usr/local/include/ffnvcodec /usr/include/ffnvcodec && \
     ldconfig
 
 # Create user and setup workspace
 RUN useradd -ms /bin/bash ffmpeguser
 WORKDIR /tmp
 
-# Download and extract FFmpeg
+# Download and extract FFmpeg (using newer version for better NVIDIA support)
 RUN wget https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.gz && \
     tar xzf ffmpeg-${FFMPEG_VERSION}.tar.gz && \
     rm ffmpeg-${FFMPEG_VERSION}.tar.gz
 
 WORKDIR /tmp/ffmpeg-${FFMPEG_VERSION}
 
-# Configure FFmpeg with proper CUDA paths and dependencies check
-RUN PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig" \
-    ./configure \
+# Configure FFmpeg with NVENC support - single attempt with better paths
+RUN ./configure \
     --prefix=/usr/local \
     --enable-gpl \
     --enable-nonfree \
@@ -129,7 +128,7 @@ RUN PKG_CONFIG_PATH="/usr/local/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfi
     --enable-cuvid \
     --enable-vdpau \
     --enable-vaapi \
-    --extra-cflags="-I/usr/local/cuda/include -I/usr/local/include" \
+    --extra-cflags="-I/usr/local/cuda/include -I/usr/local/include/ffnvcodec -I/usr/include/ffnvcodec" \
     --extra-ldflags="-L/usr/local/cuda/lib64 -L/usr/local/lib" \
     --extra-libs="-lpthread -lm -lz"
 
@@ -160,10 +159,10 @@ WORKDIR /home/ffmpeguser
 RUN ffmpeg -version && \
     echo "=== Hardware Accelerators ===" && \
     ffmpeg -hwaccels && \
-    echo "=== Available Encoders ===" && \
-    ffmpeg -encoders | grep -E "(nvenc|h264|h265)" && \
-    echo "=== Available Decoders ===" && \
-    ffmpeg -decoders | grep -E "(cuvid|h264|h265)"
+    echo "=== NVENC Encoders ===" && \
+    ffmpeg -encoders | grep -i nvenc && \
+    echo "=== NVDEC Decoders ===" && \
+    ffmpeg -decoders | grep -E "(cuvid|h264|h265)" | head -5
 
 # Default command
 CMD ["/bin/bash"]
